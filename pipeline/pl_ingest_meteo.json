@@ -1,0 +1,335 @@
+{
+    "name": "pl_ingest_meteo",
+    "objectId": "<PIPELINE_ID>",
+    "properties": {
+        "activities": [
+            {
+                "name": "ForEachCity",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Lookup_villes",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Lookup_villes').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "activities": [
+                        {
+                            "name": "Copy data villes",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 4,
+                                "retryIntervalInSeconds": 60,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "typeProperties": {
+                                "source": {
+                                    "type": "JsonSource",
+                                    "storeSettings": {
+                                        "type": "HttpReadSettings",
+                                        "requestMethod": "GET"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonReadSettings"
+                                    },
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "type": "Json",
+                                        "typeProperties": {
+                                            "location": {
+                                                "type": "HttpServerLocation",
+                                                "relativeUrl": {
+                                                    "value": "/v1/forecast?latitude=@{item().lat}&longitude=@{item().lon}&hourly=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m&timezone=Africa/Casablanca",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        },
+                                        "schema": {},
+                                        "externalReferences": {
+                                            "connection": "<CONNECTION_OPEN_METEO_ID>"
+                                        }
+                                    }
+                                },
+                                "sink": {
+                                    "type": "JsonSink",
+                                    "storeSettings": {
+                                        "type": "LakehouseWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonWriteSettings"
+                                    },
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "linkedService": {
+                                            "name": "lh_meteo",
+                                            "properties": {
+                                                "annotations": [],
+                                                "type": "Lakehouse",
+                                                "typeProperties": {
+                                                    "workspaceId": "<WORKSPACE_ID>",
+                                                    "artifactId": "<LAKEHOUSE_ID>",
+                                                    "rootFolder": "Files"
+                                                }
+                                            }
+                                        },
+                                        "type": "Json",
+                                        "typeProperties": {
+                                            "location": {
+                                                "type": "LakehouseLocation",
+                                                "fileName": {
+                                                    "value": "@concat(item().city, '_', formatDateTime(utcNow(), 'yyyyMMddHHmm'), '.json')",
+                                                    "type": "Expression"
+                                                },
+                                                "folderPath": "bronze/weather"
+                                            }
+                                        },
+                                        "schema": {}
+                                    }
+                                },
+                                "enableStaging": false
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Lookup_villes",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "source": {
+                        "type": "DelimitedTextSource",
+                        "storeSettings": {
+                            "type": "LakehouseReadSettings",
+                            "recursive": true,
+                            "enablePartitionDiscovery": false
+                        },
+                        "formatSettings": {
+                            "type": "DelimitedTextReadSettings"
+                        }
+                    },
+                    "firstRowOnly": false,
+                    "datasetSettings": {
+                        "annotations": [],
+                        "linkedService": {
+                            "name": "lh_meteo",
+                            "properties": {
+                                "annotations": [],
+                                "type": "Lakehouse",
+                                "typeProperties": {
+                                    "workspaceId": "<WORKSPACE_ID>",
+                                    "artifactId": "<LAKEHOUSE_ID>",
+                                    "rootFolder": "Files"
+                                }
+                            }
+                        },
+                        "type": "DelimitedText",
+                        "typeProperties": {
+                            "location": {
+                                "type": "LakehouseLocation",
+                                "fileName": "cities.csv",
+                                "folderPath": "config"
+                            },
+                            "columnDelimiter": ",",
+                            "escapeChar": "\\",
+                            "firstRowAsHeader": true,
+                            "quoteChar": "\""
+                        },
+                        "schema": []
+                    }
+                }
+            },
+            {
+                "name": "Run_Notebook_Silver",
+                "type": "TridentNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "ForEachCity",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookId": "<NOTEBOOK_SILVER_GOLD_METEO_ID>",
+                    "workspaceId": "<WORKSPACE_ID>"
+                }
+            },
+            {
+                "name": "ForEachAirQuality",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Lookup_villes",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Lookup_villes').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "activities": [
+                        {
+                            "name": "Copy data villes_copy1",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 4,
+                                "retryIntervalInSeconds": 60,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "typeProperties": {
+                                "source": {
+                                    "type": "JsonSource",
+                                    "storeSettings": {
+                                        "type": "HttpReadSettings",
+                                        "requestMethod": "GET"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonReadSettings"
+                                    },
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "type": "Json",
+                                        "typeProperties": {
+                                            "location": {
+                                                "type": "HttpServerLocation",
+                                                "relativeUrl": {
+                                                    "value": "/v1/air-quality?latitude=@{item().lat}&longitude=@{item().lon}&hourly=pm10,pm2_5,nitrogen_dioxide,ozone,european_aqi&timezone=UTC",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        },
+                                        "schema": {},
+                                        "externalReferences": {
+                                            "connection": "<CONNECTION_OPEN_METEO_AIR_ID>"
+                                        }
+                                    }
+                                },
+                                "sink": {
+                                    "type": "JsonSink",
+                                    "storeSettings": {
+                                        "type": "LakehouseWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonWriteSettings"
+                                    },
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "linkedService": {
+                                            "name": "lh_meteo",
+                                            "properties": {
+                                                "annotations": [],
+                                                "type": "Lakehouse",
+                                                "typeProperties": {
+                                                    "workspaceId": "<WORKSPACE_ID>",
+                                                    "artifactId": "<LAKEHOUSE_ID>",
+                                                    "rootFolder": "Files"
+                                                }
+                                            }
+                                        },
+                                        "type": "Json",
+                                        "typeProperties": {
+                                            "location": {
+                                                "type": "LakehouseLocation",
+                                                "fileName": {
+                                                    "value": "@concat(item().city, '_', formatDateTime(utcNow(), 'yyyyMMddHHmm'), '.json')",
+                                                    "type": "Expression"
+                                                },
+                                                "folderPath": "bronze/air_quality"
+                                            }
+                                        },
+                                        "schema": {}
+                                    }
+                                },
+                                "enableStaging": false
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Notebook_air",
+                "type": "TridentNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "ForEachAirQuality",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookId": "<NOTEBOOK_SILVER_GOLD_AIR_ID>",
+                    "workspaceId": "<WORKSPACE_ID>"
+                }
+            },
+            {
+                "name": "Notebook_Star",
+                "type": "TridentNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Run_Notebook_Silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Notebook_air",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebookId": "<NOTEBOOK_STAR_MODEL_ID>",
+                    "workspaceId": "<WORKSPACE_ID>"
+                }
+            }
+        ]
+    }
+}
